@@ -1,68 +1,40 @@
-import 'dotenv/config';
-import makeWASocket, {
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  makeInMemoryStore,
-  useMultiFileAuthState
-} from '@whiskeysockets/baileys';
-import pino from 'pino';
-import { Boom } from '@hapi/boom';
-import { handleCommand } from './commands/index.js';
-import { getSenderId, getTextFromMessage } from './utils/whatsapp.js';
+// src/index.js
 
-const prefix = process.env.PREFIX || '!';
-const logger = pino({ level: 'silent' });
+const express = require('express');
+const app = express();
 
-async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth');
-  const { version } = await fetchLatestBaileysVersion();
-  const store = makeInMemoryStore({ logger });
+// Middleware for parsing JSON requests
+app.use(express.json());
 
-  const sock = makeWASocket({
-    auth: state,
-    logger,
-    printQRInTerminal: true,
-    version,
-    syncFullHistory: false,
-    markOnlineOnConnect: true,
-    browser: ['Itachi Bot', 'Chrome', '1.0.0']
-  });
-
-  store.bind(sock.ev);
-  sock.ev.on('creds.update', saveCreds);
-
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+// Command routing setup
+app.post('/command', async (req, res) => {
     try {
-      const msg = messages[0];
-      if (!msg?.message || msg.key.fromMe) return;
+        const command = req.body.command;
 
-      const text = getTextFromMessage(msg.message)?.trim();
-      if (!text?.startsWith(prefix)) return;
+        if (!command) {
+            return res.status(400).json({ error: 'Command is required.' });
+        }
 
-      const from = msg.key.remoteJid;
-      const sender = getSenderId(msg);
-      const [rawCommand, ...args] = text.slice(prefix.length).split(/\s+/);
-      const command = (rawCommand || '').toLowerCase();
-
-      await handleCommand({ sock, msg, from, sender, prefix, command, args });
+        switch (command) {
+            case 'start':
+                // Handle start command
+                res.json({ message: 'Starting...' });
+                break;
+            case 'stop':
+                // Handle stop command
+                res.json({ message: 'Stopping...' });
+                break;
+            default:
+                res.status(404).json({ error: 'Command not found.' });
+        }
     } catch (error) {
-      console.error('Erro ao processar mensagem:', error);
+        console.error('Error handling command:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
-  });
+});
 
-  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
-    if (connection === 'open') {
-      console.log('✅ Bot conectado com sucesso.');
-      return;
-    }
-
-    if (connection === 'close') {
-      const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log('Conexão encerrada.', { statusCode, shouldReconnect });
-      if (shouldReconnect) startBot();
-    }
-  });
-}
-
-startBot();
+// Starting the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
